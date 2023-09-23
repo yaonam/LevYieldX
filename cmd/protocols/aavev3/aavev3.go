@@ -58,8 +58,6 @@ var poolDataProviders = map[string]string{
 	"base":     "0x2d8A3C5677189723C4cB8873CfC9C8976FDF38Ac",
 }
 
-var wethGatewayAddresses = map[string]string{}
-
 func NewAaveV3Protocol() *AaveV3 {
 	return &AaveV3{}
 }
@@ -101,21 +99,12 @@ func (a *AaveV3) Connect(chain string) error {
 		return fmt.Errorf("failed to instantiate UIPoolDataProvider: %v", err)
 	}
 
-	// Instantiate WETHGateway
-	wethGatewayAddress := common.HexToAddress(wethGatewayAddresses[chain])
-	wethGatewayTransactor, err := NewWETHGatewayTransactor(wethGatewayAddress, cl)
-	if err != nil {
-		log.Printf("Failed to instantiate WETHGateway: %v", err)
-		return err
-	}
-
 	a.chain = chain
 	a.cl = cl
 	a.addressesProviderAddress = addressesProviderAddress
 	a.poolAddress = lendingPoolAddress
 	a.poolContract = poolContract
 	a.uiPoolDataProviderCaller = uiPoolDataProviderCaller
-	a.wethGatewayTransactor = wethGatewayTransactor
 	log.Printf("%v connected to %v (pool: %v)", AaveV3Name, a.chain, lendingPoolAddress)
 	return nil
 }
