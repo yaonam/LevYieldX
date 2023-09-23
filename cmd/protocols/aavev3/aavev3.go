@@ -1,7 +1,6 @@
 package aavev3
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"math/big"
@@ -19,7 +18,6 @@ import (
 type AaveV3 struct {
 	chain                    string
 	cl                       *ethclient.Client
-	chainID                  *big.Int
 	addressesProviderAddress common.Address
 	poolAddress              common.Address
 	poolContract             *AaveV3Pool
@@ -75,13 +73,6 @@ func (a *AaveV3) Connect(chain string) error {
 		return err
 	}
 
-	// Fetch chainid
-	chainid, err := cl.ChainID(context.Background())
-	if err != nil {
-		log.Printf("Failed to fetch chainid: %v", err)
-		return err
-	}
-
 	// Instantiate AddressesProvider
 	addressesProviderAddress := common.HexToAddress(aavev3AddressesProviders[chain])
 	addressesProviderCaller, err := NewAaveV3AddressesProviderCaller(addressesProviderAddress, cl)
@@ -120,7 +111,6 @@ func (a *AaveV3) Connect(chain string) error {
 
 	a.chain = chain
 	a.cl = cl
-	a.chainID = chainid
 	a.addressesProviderAddress = addressesProviderAddress
 	a.poolAddress = lendingPoolAddress
 	a.poolContract = poolContract
