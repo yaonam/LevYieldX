@@ -1,4 +1,4 @@
-package protocols
+package schema
 
 import "math/big"
 

@@ -7,9 +7,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	"yield-arb/cmd/utils"
+	"levyieldx/cmd/protocols/schema"
+	"levyieldx/cmd/utils"
 )
 
 type AaveV3 struct {
@@ -110,3 +112,9 @@ func (a *AaveV3) Connect(chain string) error {
 	log.Printf("%v connected to %v (chainid: %v, pool: %v)", AaveV3Name, a.chain, a.chainID, lendingPoolAddress)
 	return nil
 }
+
+func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
+	return nil, nil
+}
+
+func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error)
