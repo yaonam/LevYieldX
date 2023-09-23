@@ -103,7 +103,7 @@ func (a *AaveV3) Connect(chain string) error {
 
 	a.chain = chain
 	a.cl = cl
-	// a.chainID = chainid
+	a.chainID = chainid
 	a.addressesProviderAddress = addressesProviderAddress
 	a.poolAddress = lendingPoolAddress
 	a.poolContract = poolContract
@@ -117,4 +117,6 @@ func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	return nil, nil
 }
 
-func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error)
+func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
+	return nil, nil
+}

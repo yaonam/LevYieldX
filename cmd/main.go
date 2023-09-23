@@ -1,3 +1,7 @@
 package main
 
-// Entry point for the application
+import "levyieldx/cmd/api"
+
+func main() {
+	api.Start()
+}

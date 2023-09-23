@@ -29,6 +29,7 @@ func Start() {
 	r.Get("/", test)
 
 	// TODO: Change for prod deployment
+	log.Println("Starting server on port 8080")
 	http.ListenAndServe("127.0.0.1:8080", r)
 }
 
@@ -44,4 +45,5 @@ func test(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to connect to the %v protocol: %v", protocol, err)
 		return
 	}
+	log.Println("Connected to the protocol")
 }
