@@ -389,6 +389,62 @@ func (c *CompoundV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	return protocolChains, nil
 }
 
+func (c *CompoundV3) CalcAPY(m *schema.MarketInfo, amount *big.Int, isSupply bool) (*big.Int, *big.Int, error) {
+	supplyCapRemaining := m.Params["supplyCapRemaining"].(*big.Int)
+	totalSupply := m.Params["totalSupply"].(*big.Int)
+	totalBorrows := m.Params["totalBorrows"].(*big.Int)
+
+	base := m.Params["base"].(*big.Int)
+	slopeLow := m.Params["slopeLow"].(*big.Int)
+	kink := m.Params["kink"].(*big.Int)
+	slopeHigh := m.Params["slopeHigh"].(*big.Int)
+
+	// If TotalBorrows is nil, 0 APY
+	if m.Params["totalBorrows"].(*big.Int) == nil {
+		return big.NewInt(0), amount, nil
+	}
+
+	var actualAmount *big.Int
+	availableLiquidity := new(big.Int).Sub(totalSupply, totalBorrows)
+	if isSupply && amount.Cmp(supplyCapRemaining) == 1 {
+		actualAmount = new(big.Int).Set(supplyCapRemaining)
+	} else if !isSupply && amount.Cmp(availableLiquidity) == 1 {
+		actualAmount = new(big.Int).Set(availableLiquidity)
+	} else {
+		actualAmount = new(big.Int).Set(amount)
+	}
+
+	// If not base market (totalBorrows is nil), 0 APY
+	if totalBorrows == nil {
+		return big.NewInt(0), actualAmount, nil
+	}
+
+	// Calc utilization
+	supply := totalSupply
+	borrows := totalBorrows
+	if isSupply {
+		supply = new(big.Int).Add(supply, actualAmount)
+	} else {
+		borrows = new(big.Int).Add(borrows, actualAmount)
+	}
+	utilization := new(big.Int).Div(new(big.Int).Mul(borrows, utils.ETHMantissaInt), supply)
+
+	// Calculate rate per second
+	var ratePerSecond *big.Int
+	if utilization.Cmp(kink) < 1 {
+		ratePerSecond = new(big.Int).Add(base, utils.ManMul(slopeLow, utilization))
+	} else {
+		ratePerSecond = new(big.Int).Add(base, utils.ManMul(slopeHigh, kink))
+		ratePerSecond.Add(ratePerSecond, utils.ManMul(slopeHigh, new(big.Int).Sub(utilization, kink)))
+	}
+
+	// Calculate APY
+	apy := new(big.Int).Mul(ratePerSecond, utils.SecPerYear)
+	apy.Mul(apy, big.NewInt(1e9)) // Convert to ray
+
+	return apy, actualAmount, nil
+}
+
 func (c *CompoundV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
 	return nil, nil
 }

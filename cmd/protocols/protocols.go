@@ -5,6 +5,7 @@ import (
 	"levyieldx/cmd/protocols/aavev3"
 	"levyieldx/cmd/protocols/compoundv3"
 	"levyieldx/cmd/protocols/schema"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -16,6 +17,10 @@ type YieldProtocol interface {
 	Connect(chain string) error
 	// Get all markets
 	GetMarkets() ([]*schema.ProtocolChain, error)
+	// Returns the APY and actual amount for the given token.
+	// Actual amount is the amount that can be supplied/borrowed.
+	// APY in ray.
+	CalcAPY(market *schema.MarketInfo, amount *big.Int, isSupply bool) (*big.Int, *big.Int, error)
 	// Returns the transactions required to execute the strategy step.
 	GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error)
 }
