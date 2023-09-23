@@ -23,6 +23,17 @@ type CompoundV3 struct {
 	cometContract  *Comet
 }
 
+type CompoundV3Stats struct {
+	TotalSupply     *big.Int
+	TotalBorrows    *big.Int
+	SupplyBase      *big.Int
+	BorrowBase      *big.Int
+	SupplySlopeLow  *big.Int
+	BorrowSlopeLow  *big.Int
+	SupplySlopeHigh *big.Int
+	BorrowSlopeHigh *big.Int
+}
+
 const CompoundV3Name = "compoundv3"
 
 var compv3ConfigAddresses = map[string]string{
@@ -42,6 +53,11 @@ var compv3CometAddresses = map[string]string{
 	"arbitrum":      "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
 	"base:usdbc":    "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
 	"base:weth":     "0x46e6b214b524310239732D51387075E0e70970bf",
+}
+
+var decimals = map[string]uint8{
+	"ETH":    18,
+	"USDC.e": 8,
 }
 
 func NewCompoundV3Protocol() *CompoundV3 {
@@ -162,6 +178,62 @@ func (c *CompoundV3) getTotalsCollateral(assets []CometConfigurationAssetConfig)
 	return result, nil
 }
 
+/*
+Seconds Per Year = 60 * 60 * 24 * 365
+Utilization = getUtilization()
+Supply Rate = getSupplyRate(Utilization)
+Supply APR = Supply Rate / (10 ^ 18) * Seconds Per Year * 100
+*/
+func (c *CompoundV3) getBaseStats() (*CompoundV3Stats, error) {
+	// Pack calls
+	cometABI, err := CometMetaData.GetAbi()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comet abi: %v", err)
+	}
+	calls := make([]transactions.Multicall3Call3, 8)
+	methods := []string{"totalSupply", "totalBorrow", "supplyPerSecondInterestRateBase", "borrowPerSecondInterestRateBase", "supplyPerSecondInterestRateSlopeLow", "borrowPerSecondInterestRateSlopeLow", "supplyPerSecondInterestRateSlopeHigh", "borrowPerSecondInterestRateSlopeHigh"}
+	for i, method := range methods {
+		data, err := cometABI.Pack(method)
+		if err != nil {
+			return nil, fmt.Errorf("failed to pack %v calldata: %v", method, err)
+		}
+		calls[i] = transactions.Multicall3Call3{
+			Target:   c.cometAddress,
+			CallData: data,
+		}
+	}
+
+	// Perform multicall
+	responses, err := transactions.HandleMulticall(c.cl, &calls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to multicall asset info: %v", err)
+	}
+
+	// Unpack
+	type ReturnData struct {
+		Data *big.Int
+	}
+	results := make([]*big.Int, 8)
+	for i, response := range *responses {
+		returnData := new(ReturnData)
+		if err := cometABI.UnpackIntoInterface(returnData, methods[i], response.ReturnData); err != nil {
+			return nil, fmt.Errorf("failed to unpack %v: %v", methods[i], err)
+		}
+		results[i] = returnData.Data
+	}
+
+	return &CompoundV3Stats{
+		TotalSupply:     results[0],
+		TotalBorrows:    results[1],
+		SupplyBase:      results[2],
+		BorrowBase:      results[3],
+		SupplySlopeLow:  results[4],
+		BorrowSlopeLow:  results[5],
+		SupplySlopeHigh: results[6],
+		BorrowSlopeHigh: results[7],
+	}, nil
+}
+
 func (c *CompoundV3) connectComet(chainAsset string) error {
 	// Instantiate comet
 	var err error
@@ -220,6 +292,95 @@ func (c *CompoundV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 		amountsSupplied, err := c.getTotalsCollateral(config.AssetConfigs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get amounts supplied: %v", err)
+		}
+
+		// Fill in LTV and APY for collateral tokens
+		supplyMarkets := make([]*schema.MarketInfo, numAssets+1)
+		for i, assetInfo := range config.AssetConfigs {
+			symbol, err := utils.ConvertAddressToSymbol(c.chain, assetInfo.Asset.Hex())
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert symbol: %v", err)
+			}
+			// Has LTV, no APY
+			ltv := big.NewInt(int64(assetInfo.BorrowCollateralFactor))
+			ltv.Quo(ltv, big.NewInt(1e14))
+			supplyCap := new(big.Int).Sub(assetInfo.SupplyCap, amountsSupplied[i])
+			supplyMarkets[i] = &schema.MarketInfo{
+				Protocol:   CompoundV3Name,
+				Chain:      c.chain,
+				Token:      symbol,
+				Decimals:   big.NewInt(int64(assetInfo.Decimals)),
+				LTV:        ltv,
+				PriceInUSD: prices[i],
+				Params: map[string]interface{}{
+					"baseAsset":          chainAsset,
+					"supplyCapRemaining": supplyCap,
+					"totalSupply":        amountsSupplied[i],
+					"totalBorrows":       big.NewInt(0),
+
+					"base":      big.NewInt(0),
+					"slopeLow":  big.NewInt(0),
+					"kink":      big.NewInt(0),
+					"slopeHigh": big.NewInt(0),
+				},
+			}
+		}
+
+		// Base token, has APY, no LTV
+		symbol, err := utils.ConvertAddressToSymbol(c.chain, config.BaseToken.Hex())
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert base address to token: %v", err)
+		}
+		baseStats, err := c.getBaseStats()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get base aprs: %v", err)
+		}
+		decimals := decimals[symbol]
+		market := &schema.MarketInfo{
+			Protocol:   CompoundV3Name,
+			Chain:      c.chain,
+			Token:      symbol,
+			Decimals:   big.NewInt(int64(decimals)),
+			LTV:        big.NewInt(0),
+			PriceInUSD: prices[numAssets],
+			Params: map[string]interface{}{
+				"baseAsset":          chainAsset,
+				"supplyCapRemaining": utils.MaxUint256,
+				"totalSupply":        baseStats.TotalSupply,
+				"totalBorrows":       baseStats.TotalBorrows,
+
+				"base":      baseStats.SupplyBase,
+				"slopeLow":  baseStats.SupplySlopeLow,
+				"kink":      big.NewInt(int64(config.SupplyKink)),
+				"slopeHigh": baseStats.SupplySlopeHigh,
+			},
+		}
+		supplyMarkets[numAssets] = market
+		borrowMarkets := []*schema.MarketInfo{{
+			Protocol:   CompoundV3Name,
+			Chain:      c.chain,
+			Token:      symbol,
+			Decimals:   big.NewInt(int64(decimals)),
+			LTV:        big.NewInt(0),
+			PriceInUSD: prices[numAssets],
+			Params: map[string]interface{}{
+				"baseAsset":          chainAsset,
+				"supplyCapRemaining": utils.MaxUint256,
+				"totalSupply":        baseStats.TotalSupply,
+				"totalBorrows":       baseStats.TotalBorrows,
+
+				"base":      baseStats.BorrowBase,
+				"slopeLow":  baseStats.BorrowSlopeLow,
+				"kink":      big.NewInt(int64(config.BorrowKink)),
+				"slopeHigh": baseStats.BorrowSlopeHigh,
+			}}}
+
+		log.Printf("Fetched %v lending tokens & %v borrowing tokens", len(supplyMarkets), len(borrowMarkets))
+		protocolChains[i] = &schema.ProtocolChain{
+			Protocol:      CompoundV3Name,
+			Chain:         c.chain,
+			SupplyMarkets: supplyMarkets,
+			BorrowMarkets: borrowMarkets,
 		}
 	}
 
