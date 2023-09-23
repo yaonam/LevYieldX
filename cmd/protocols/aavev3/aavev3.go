@@ -186,6 +186,7 @@ func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch ratios: %v", err)
 	}
+	log.Print(optimalStableToTotalDebtRatios, stableRateExcessOffsets)
 
 	return nil, nil
 }

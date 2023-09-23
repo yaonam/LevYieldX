@@ -46,4 +46,6 @@ func test(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("Connected to the protocol")
+
+	p.GetMarkets()
 }
