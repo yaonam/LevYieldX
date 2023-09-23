@@ -26,6 +26,21 @@ type AaveV3 struct {
 	wethGatewayTransactor    *WETHGatewayTransactor
 }
 
+type ReserveData struct {
+	Unbacked                *big.Int
+	AccruedToTreasuryScaled *big.Int
+	TotalAToken             *big.Int
+	TotalStableDebt         *big.Int
+	TotalVariableDebt       *big.Int
+	LiquidityRate           *big.Int
+	VariableBorrowRate      *big.Int
+	StableBorrowRate        *big.Int
+	AverageStableBorrowRate *big.Int
+	LiquidityIndex          *big.Int
+	VariableBorrowIndex     *big.Int
+	LastUpdateTimestamp     *big.Int
+}
+
 const AaveV3Name = "aavev3"
 
 var aavev3AddressesProviders = map[string]string{
@@ -171,6 +186,47 @@ func (a *AaveV3) getRatios(aggReserveData []IUiPoolDataProviderV3AggregatedReser
 	return optimalStableToTotalDebtRatios, stableRateExcessOffsets, nil
 }
 
+func (a *AaveV3) getReserveDatas(aggReserveData []IUiPoolDataProviderV3AggregatedReserveData, aggReserveDataLength int) ([]*ReserveData, error) {
+	// Pack data
+	calls := make([]transactions.Multicall3Call3, aggReserveDataLength)
+	poolDataProviderABI, err := PoolDataProviderMetaData.GetAbi()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pool data provider abi: %v", err)
+	}
+	poolDataProviderAddress := common.HexToAddress(poolDataProviders[a.chain])
+	for i, reserveData := range aggReserveData {
+		data, err := poolDataProviderABI.Pack("getReserveData", reserveData.UnderlyingAsset)
+		if err != nil {
+			return nil, fmt.Errorf("failed to pack getReserveData calldata: %v", err)
+		}
+		calls[i] = transactions.Multicall3Call3{
+			Target:   poolDataProviderAddress,
+			CallData: data,
+		}
+	}
+	// Make multicall
+	responses, err := transactions.HandleMulticall(a.cl, &calls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to handle multicall: %v", err)
+	}
+	// Unpack results
+	reserveDatas := make([]*ReserveData, aggReserveDataLength)
+	for i, response := range *responses {
+		reserveData := make([]*big.Int, 12)
+		err = poolDataProviderABI.UnpackIntoInterface(&reserveData, "getReserveData", response.ReturnData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unpack getReserveData: %v", err)
+		}
+		reserveDatas[i] = &ReserveData{
+			TotalStableDebt:     reserveData[3],
+			TotalVariableDebt:   reserveData[4],
+			VariableBorrowIndex: reserveData[10],
+		}
+	}
+
+	return reserveDatas, nil
+}
+
 func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	log.Printf("Fetching market data for %v...", a.chain)
 
@@ -187,6 +243,13 @@ func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 		return nil, fmt.Errorf("failed to fetch ratios: %v", err)
 	}
 	log.Print(optimalStableToTotalDebtRatios, stableRateExcessOffsets)
+
+	// Fetch reserve data
+	reserveDatas, err := a.getReserveDatas(aggReserveData, aggReserveDataLength)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch reserve datas: %v", err)
+	}
+	log.Print(reserveDatas)
 
 	return nil, nil
 }
