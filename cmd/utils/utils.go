@@ -2,8 +2,10 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,9 @@ type ChainConfig struct {
 }
 
 var ChainConfigs = make(map[string]*ChainConfig)
+
+// Constants
+var MaxUint256, _ = new(big.Int).SetString("115792089237316195423570985008687907853269984665640564039457584007913129639935", 10)
 
 func init() {
 	// Parse all config json files
@@ -55,4 +60,24 @@ func loadConfig(configName string) error {
 
 	ChainConfigs[strings.TrimSuffix(configName, ".json")] = &parsedConfig
 	return nil
+}
+
+func ConvertAddressToSymbol(chain string, address string) (string, error) {
+	config, ok := ChainConfigs[chain]
+	if !ok {
+		return "", fmt.Errorf("could not find %v config", chain)
+	}
+
+	// Reverse mapping O(tokens)
+	reversedMapping := make(map[string]string)
+	for token, address := range config.Tokens {
+		reversedMapping[address] = token
+	}
+
+	// Convert address to symbols O(addresses)
+	symbol, ok := reversedMapping[address]
+	if ok {
+		return symbol, nil
+	}
+	return "", fmt.Errorf("could not find symbol for %v", address)
 }

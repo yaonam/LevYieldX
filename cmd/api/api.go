@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -47,5 +48,15 @@ func test(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("Connected to the protocol")
 
-	p.GetMarkets()
+	markets, err := p.GetMarkets()
+	if err != nil {
+		log.Printf("Failed to get markets: %v", err)
+		return
+	}
+	res, err := json.Marshal(markets)
+	if err != nil {
+		log.Panicf("failed to marshal strategies: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(res)
 }

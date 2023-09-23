@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -229,6 +230,7 @@ func (a *AaveV3) getReserveDatas(aggReserveData []IUiPoolDataProviderV3Aggregate
 
 func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	log.Printf("Fetching market data for %v...", a.chain)
+	startTime := time.Now()
 
 	// Fetch reserve data for all tokens
 	aggReserveData, _, err := a.uiPoolDataProviderCaller.GetReservesData(nil, a.addressesProviderAddress)
@@ -242,16 +244,78 @@ func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch ratios: %v", err)
 	}
-	log.Print(optimalStableToTotalDebtRatios, stableRateExcessOffsets)
 
 	// Fetch reserve data
 	reserveDatas, err := a.getReserveDatas(aggReserveData, aggReserveDataLength)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch reserve datas: %v", err)
 	}
-	log.Print(reserveDatas)
 
-	return nil, nil
+	// Filter out results for specified symbols
+	var supplyMarkets []*schema.MarketInfo
+	var borrowMarkets []*schema.MarketInfo
+	for i, reserveData := range aggReserveData {
+		if reserveData.IsPaused {
+			continue
+		}
+
+		var supplyCap *big.Int
+		if reserveData.SupplyCap.Cmp(big.NewInt(0)) == 0 { // Infinite cap
+			supplyCap = utils.MaxUint256
+		} else {
+			decimals := new(big.Int).Exp(big.NewInt(10), reserveData.Decimals, nil)
+			amountSupplied := new(big.Int).Add(reserveData.TotalScaledVariableDebt, reserveData.AvailableLiquidity)
+			supplyCap = new(big.Int).Mul(reserveData.SupplyCap, decimals)
+			supplyCap.Sub(supplyCap, amountSupplied)
+		}
+
+		// Check mapping for USDC.e
+		symbol, err := utils.ConvertAddressToSymbol(a.chain, reserveData.UnderlyingAsset.Hex())
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert address to symbol: %v", err)
+		}
+
+		market := &schema.MarketInfo{
+			Protocol:   AaveV3Name,
+			Chain:      a.chain,
+			Token:      symbol,
+			Decimals:   reserveData.Decimals,
+			LTV:        reserveData.BaseLTVasCollateral,
+			PriceInUSD: reserveData.PriceInMarketReferenceCurrency,
+			Params: map[string]interface{}{
+				"supplyCapRemaining": supplyCap,
+				"totalVariableDebt":  reserveDatas[i].TotalVariableDebt,
+				"totalStableDebt":    reserveDatas[i].TotalStableDebt,
+
+				"reserveFactor":          reserveData.ReserveFactor,
+				"availableLiquidity":     reserveData.AvailableLiquidity,
+				"averageStableRate":      reserveData.AverageStableRate,
+				"stableRateSlope1":       reserveData.StableRateSlope1,
+				"stableRateSlope2":       reserveData.StableRateSlope2,
+				"variableRateSlope1":     reserveData.VariableRateSlope1,
+				"variableRateSlope2":     reserveData.VariableRateSlope2,
+				"baseStableBorrowRate":   reserveData.BaseStableBorrowRate,
+				"baseVariableBorrowRate": reserveData.BaseVariableBorrowRate,
+				"optimalRatio":           reserveData.OptimalUsageRatio,
+				"unbacked":               reserveData.Unbacked,
+
+				"optimalStableToTotalDebtRatio": optimalStableToTotalDebtRatios[i],
+				"stableRateExcessOffset":        stableRateExcessOffsets[i],
+			},
+		}
+		supplyMarkets = append(supplyMarkets, market)
+		borrowMarkets = append(borrowMarkets, market)
+	}
+
+	log.Printf("Fetched %v lending tokens & %v borrowing tokens", len(supplyMarkets), len(borrowMarkets))
+	log.Printf("Time elapsed: %v", time.Since(startTime))
+
+	return []*schema.ProtocolChain{{
+		Protocol:      AaveV3Name,
+		Chain:         a.chain,
+		SupplyMarkets: supplyMarkets,
+		BorrowMarkets: borrowMarkets,
+	}}, nil
 }
 
 func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
