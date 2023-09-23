@@ -6,6 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.13.1
 	github.com/go-chi/chi v1.5.5
 	github.com/rs/cors v1.10.0
+	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
 )
 
 require (
@@ -31,7 +32,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	golang.org/x/crypto v0.12.0 // indirect
-	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad // indirect
 	golang.org/x/mod v0.11.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect

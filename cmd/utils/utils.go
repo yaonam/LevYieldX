@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"levyieldx/cmd/protocols/schema"
 	"log"
 	"math/big"
 	"os"
@@ -18,6 +19,7 @@ type ChainConfig struct {
 }
 
 var ChainConfigs = make(map[string]*ChainConfig)
+var TokenAliases map[string]string
 
 // Constants
 var MaxUint64 = new(big.Int).SetUint64(^uint64(0))
@@ -71,6 +73,46 @@ func loadConfig(configName string) error {
 	return nil
 }
 
+// Loads the alias mapping into TokenAliases var
+func loadAliases() error {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	path := filepath.Join(dir, "mappings", "token_aliases.json")
+	rawMapping, err := os.Open(path)
+	if err != nil {
+		log.Printf("Failed to open token aliases: %v", err)
+		return err
+	}
+	defer rawMapping.Close()
+	var parsedMapping = make(map[string]string)
+	readMapping, err := io.ReadAll(rawMapping)
+	if err != nil {
+		log.Printf("Failed to read token aliases: %v", err)
+	}
+	err = json.Unmarshal(readMapping, &parsedMapping)
+	if err != nil {
+		log.Printf("Failed to parse token aliases: %v", err)
+		return err
+	}
+
+	TokenAliases = parsedMapping
+	return nil
+}
+
+// Converts the token symbol to its respective address for the specified chain.
+func ConvertSymbolToAddress(chain string, symbol string) (string, error) {
+	config, ok := ChainConfigs[chain]
+	if !ok {
+		return "", fmt.Errorf("could not find %v config", chain)
+	}
+
+	address, ok := config.Tokens[symbol]
+	if ok {
+		return address, nil
+	}
+	return "", fmt.Errorf("could not find address for %v", symbol)
+}
+
 func ConvertAddressToSymbol(chain string, address string) (string, error) {
 	config, ok := ChainConfigs[chain]
 	if !ok {
@@ -89,6 +131,19 @@ func ConvertAddressToSymbol(chain string, address string) (string, error) {
 		return symbol, nil
 	}
 	return "", fmt.Errorf("could not find symbol for %v", address)
+}
+
+// Returns the common symbol if an alias, otherwise return the arg.
+func CommonSymbol(symbol string) string {
+	if commonSymbol, ok := TokenAliases[symbol]; ok {
+		return commonSymbol
+	}
+	return symbol
+}
+
+// Returns the protocol chain key string
+func PCString(m *schema.MarketInfo) string {
+	return m.Protocol + ":" + m.Chain
 }
 
 // Convert 18 decimals to 27 decimals

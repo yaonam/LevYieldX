@@ -3,13 +3,17 @@ package api
 import (
 	"encoding/json"
 	"log"
+	"math/big"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/rs/cors"
 
+	"levyieldx/cmd/arbitrage"
 	"levyieldx/cmd/protocols"
+	"levyieldx/cmd/protocols/schema"
 )
 
 func Start() {
@@ -35,29 +39,43 @@ func Start() {
 }
 
 func test(w http.ResponseWriter, r *http.Request) {
-	const protocol = "compoundv3"
-	const chain = "arbitrum"
-	const wallet = "0x18dC22D776aEFefD2538079409176086fcB6C741"
-	const token = "USDC"
-	// Test Supply()
-	p, err := protocols.GetYieldProtocol(protocol)
-	if err != nil {
-		log.Printf("Failed to get protocol: %v", err)
-		return
-	}
-	err = p.Connect(chain)
-	if err != nil {
-		log.Printf("Failed to connect to the %v protocol: %v", protocol, err)
-		return
-	}
-	log.Println("Connected to the protocol")
+	ps := []string{"aavev3", "compoundv3"}
+	chains := []string{"arbitrum", "ethereum"}
+	baseTokens := []string{"ETH", "USDC", "USDT", "DAI"}
+	maxLevels := 3
+	initialAmountUSD := new(big.Int).SetInt64(1000)
+	safetyFactor := new(big.Int).SetInt64(9000)
 
-	markets, err := p.GetMarkets()
-	if err != nil {
-		log.Printf("Failed to get markets: %v", err)
-		return
+	var pcs []*schema.ProtocolChain
+	psMap := make(map[string]*protocols.YieldProtocol)
+	for _, protocol := range ps {
+		p, err := protocols.GetYieldProtocol(protocol)
+		if err != nil {
+			log.Panicf("Failed to get protocol: %v", err)
+		}
+		psMap[protocol] = &p
+		for _, chain := range chains {
+			p.Connect(chain)
+			pms, err := p.GetMarkets()
+			if err != nil {
+				log.Panicf("failed to get markets: %v", err)
+			}
+			pcs = append(pcs, pms...)
+		}
 	}
-	res, err := json.Marshal(markets)
+
+	log.Println("Calculating all strats...")
+	startTime := time.Now()
+	strats := arbitrage.GetAllStrats(pcs, baseTokens, maxLevels)
+	log.Printf("Time elapsed: %v", time.Since(startTime))
+	log.Println("Generating all steps...")
+	strategies, err := arbitrage.CalcBridgedStrats(psMap, strats, initialAmountUSD, safetyFactor)
+	if err != nil {
+		log.Panicf("failed to calc strategies: %v", err)
+	}
+	arbitrage.SortStrategies(strategies)
+
+	res, err := json.Marshal(strategies)
 	if err != nil {
 		log.Panicf("failed to marshal strategies: %v", err)
 	}

@@ -1,0 +1,14 @@
+{
+    "USDC.e": "USDC",
+    "wstETH": "stETH",
+    "DAI.e": "DAI",
+    "USDT.e": "USDT",
+    "WAVAX": "AVAX",
+    "WBTC.e": "BTC",
+    "WBTC": "BTC",
+    "WETH.e": "ETH",
+    "WETH": "ETH",
+    "AAVE.e": "AAVE",
+    "LINK.e": "LINK",
+    "WMATIC": "MATIC"
+}

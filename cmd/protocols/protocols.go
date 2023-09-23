@@ -25,12 +25,29 @@ type YieldProtocol interface {
 	GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error)
 }
 
+type BridgeProtocol interface {
+	// Returns the market and amount out.
+	// Bundled to reduce RPC calls.
+	GetSteps([]*schema.BridgeRequest) ([]*schema.StrategyStep, []*big.Int, error)
+
+	GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error)
+}
+
 func GetYieldProtocol(protocol string) (YieldProtocol, error) {
 	switch protocol {
 	case "aavev3":
 		return aavev3.NewAaveV3Protocol(), nil
 	case "compoundv3":
 		return compoundv3.NewCompoundV3Protocol(), nil
+	default:
+		return nil, fmt.Errorf("unknown protocol: %s", protocol)
+	}
+}
+
+func GetBridgeProtocol(protocol string) (BridgeProtocol, error) {
+	switch protocol {
+	case "synapse":
+		return synapse.NewSynapse(), nil
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", protocol)
 	}
