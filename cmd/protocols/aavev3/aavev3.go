@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"levyieldx/cmd/protocols/schema"
+	"levyieldx/cmd/transactions"
 	"levyieldx/cmd/utils"
 )
 
@@ -113,7 +114,79 @@ func (a *AaveV3) Connect(chain string) error {
 	return nil
 }
 
+func (a *AaveV3) getRatios(aggReserveData []IUiPoolDataProviderV3AggregatedReserveData, aggReserveDataLength int) ([]*big.Int, []*big.Int, error) {
+	// Fetch OptimalStableToTotalDebtRatio and StableRateExcessOffset
+	optimalStableToTotalDebtRatios := make([]*big.Int, aggReserveDataLength)
+	stableRateExcessOffsets := make([]*big.Int, aggReserveDataLength)
+	interestRateABI, err := InterestRateStrategyMetaData.GetAbi()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch interest rate strategy abi: %v", err)
+	}
+	// Pack call data
+	calls := make([]transactions.Multicall3Call3, 2*aggReserveDataLength)
+	debtRatioData, err := interestRateABI.Pack("OPTIMAL_STABLE_TO_TOTAL_DEBT_RATIO")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to pack OPTIMAL_STABLE_TO_TOTAL_DEBT_RATIO calldata: %v", err)
+	}
+	maxExcessData, err := interestRateABI.Pack("MAX_EXCESS_USAGE_RATIO")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to pack MAX_EXCESS_USAGE_RATIO calldata: %v", err)
+	}
+	for i, reserveData := range aggReserveData {
+		calls[i] = transactions.Multicall3Call3{
+			Target:   reserveData.InterestRateStrategyAddress,
+			CallData: debtRatioData,
+		}
+		calls[i+aggReserveDataLength] = transactions.Multicall3Call3{
+			Target:   reserveData.InterestRateStrategyAddress,
+			CallData: maxExcessData,
+		}
+	}
+	// Make multicall
+	responses, err := transactions.HandleMulticall(a.cl, &calls)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to handle multicall: %v", err)
+	}
+	// Unpack results
+	type ReturnData struct {
+		Data *big.Int
+	}
+	for i, response := range *responses {
+		returnData := new(ReturnData)
+		if i < aggReserveDataLength {
+			err = interestRateABI.UnpackIntoInterface(returnData, "OPTIMAL_STABLE_TO_TOTAL_DEBT_RATIO", response.ReturnData)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to unpack OPTIMAL_STABLE_TO_TOTAL_DEBT_RATIO: %v", err)
+			}
+			optimalStableToTotalDebtRatios[i] = returnData.Data
+		} else {
+			err = interestRateABI.UnpackIntoInterface(returnData, "MAX_EXCESS_USAGE_RATIO", response.ReturnData)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to unpack MAX_EXCESS_USAGE_RATIO: %v", err)
+			}
+			stableRateExcessOffsets[i-aggReserveDataLength] = returnData.Data
+		}
+	}
+
+	return optimalStableToTotalDebtRatios, stableRateExcessOffsets, nil
+}
+
 func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
+	log.Printf("Fetching market data for %v...", a.chain)
+
+	// Fetch reserve data for all tokens
+	aggReserveData, _, err := a.uiPoolDataProviderCaller.GetReservesData(nil, a.addressesProviderAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch reserve data: %v", err)
+	}
+	aggReserveDataLength := len(aggReserveData)
+
+	// Fetch OptimalStableToTotalDebtRatio and StableRateExcessOffset
+	optimalStableToTotalDebtRatios, stableRateExcessOffsets, err := a.getRatios(aggReserveData, aggReserveDataLength)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch ratios: %v", err)
+	}
+
 	return nil, nil
 }
 
