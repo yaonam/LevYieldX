@@ -22,7 +22,6 @@ type AaveV3 struct {
 	poolAddress              common.Address
 	poolContract             *AaveV3Pool
 	uiPoolDataProviderCaller *AaveV3UIPoolDataProviderCaller
-	wethGatewayTransactor    *WETHGatewayTransactor
 }
 
 type ReserveData struct {

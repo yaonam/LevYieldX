@@ -35,13 +35,17 @@ func Start() {
 }
 
 func test(w http.ResponseWriter, r *http.Request) {
-	const protocol = "aavev3"
+	const protocol = "compoundv3"
 	const chain = "arbitrum"
 	const wallet = "0x18dC22D776aEFefD2538079409176086fcB6C741"
 	const token = "USDC"
 	// Test Supply()
-	p, _ := protocols.GetYieldProtocol(protocol)
-	err := p.Connect(chain)
+	p, err := protocols.GetYieldProtocol(protocol)
+	if err != nil {
+		log.Printf("Failed to get protocol: %v", err)
+		return
+	}
+	err = p.Connect(chain)
 	if err != nil {
 		log.Printf("Failed to connect to the %v protocol: %v", protocol, err)
 		return

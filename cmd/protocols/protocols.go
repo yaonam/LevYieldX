@@ -3,6 +3,7 @@ package protocols
 import (
 	"fmt"
 	"levyieldx/cmd/protocols/aavev3"
+	"levyieldx/cmd/protocols/compoundv3"
 	"levyieldx/cmd/protocols/schema"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -23,6 +24,8 @@ func GetYieldProtocol(protocol string) (YieldProtocol, error) {
 	switch protocol {
 	case "aavev3":
 		return aavev3.NewAaveV3Protocol(), nil
+	case "compoundv3":
+		return compoundv3.NewCompoundV3Protocol(), nil
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", protocol)
 	}
