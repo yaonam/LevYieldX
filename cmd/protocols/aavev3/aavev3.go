@@ -116,7 +116,7 @@ func (a *AaveV3) Connect(chain string) error {
 	a.poolContract = poolContract
 	a.uiPoolDataProviderCaller = uiPoolDataProviderCaller
 	a.wethGatewayTransactor = wethGatewayTransactor
-	log.Printf("%v connected to %v (chainid: %v, pool: %v)", AaveV3Name, a.chain, a.chainID, lendingPoolAddress)
+	log.Printf("%v connected to %v (pool: %v)", AaveV3Name, a.chain, lendingPoolAddress)
 	return nil
 }
 
