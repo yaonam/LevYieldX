@@ -296,6 +296,128 @@ func (a *AaveV3) GetMarkets() ([]*schema.ProtocolChain, error) {
 	}}, nil
 }
 
+func (*AaveV3) CalcAPY(market *schema.MarketInfo, amount *big.Int, isSupply bool) (*big.Int, *big.Int, error) {
+	supplyCapRemaining := market.Params["supplyCapRemaining"].(*big.Int)
+	availableLiquidity := market.Params["availableLiquidity"].(*big.Int)
+
+	// Check for caps
+	actualAmount := amount
+	if isSupply && supplyCapRemaining.Cmp(amount) == -1 {
+		actualAmount = supplyCapRemaining
+	} else if !isSupply && availableLiquidity.Cmp(amount) == -1 {
+		actualAmount = availableLiquidity
+	}
+
+	if isSupply {
+		currentLiquidityRate, _, _ := calculateInterestRates(market.Params, actualAmount, big.NewInt(0))
+		return currentLiquidityRate, actualAmount, nil
+	}
+	_, _, currentVariableRate := calculateInterestRates(market.Params, big.NewInt(0), actualAmount)
+	return currentVariableRate, actualAmount, nil
+}
+
+// Default all borrows to variable rate
+func calculateInterestRates(params map[string]interface{}, liquidityAdded, liquidityTaken *big.Int) (currentLiquidityRate, currentStableRate, currentVariableRate *big.Int) {
+	totalVariableDebt := params["totalVariableDebt"].(*big.Int)
+	totalStableDebt := params["totalStableDebt"].(*big.Int)
+	reserveFactor := params["reserveFactor"].(*big.Int)
+	availableLiquidity := params["availableLiquidity"].(*big.Int)
+	averageStableRate := params["averageStableRate"].(*big.Int)
+	stableRateSlope1 := params["stableRateSlope1"].(*big.Int)
+	stableRateSlope2 := params["stableRateSlope2"].(*big.Int)
+	variableRateSlope1 := params["variableRateSlope1"].(*big.Int)
+	variableRateSlope2 := params["variableRateSlope2"].(*big.Int)
+	baseStableBorrowRate := params["baseStableBorrowRate"].(*big.Int)
+	baseVariableBorrowRate := params["baseVariableBorrowRate"].(*big.Int)
+	optimalRatio := params["optimalRatio"].(*big.Int)
+	unbacked := params["unbacked"].(*big.Int)
+	optimalStableToTotalDebtRatio := params["optimalStableToTotalDebtRatio"].(*big.Int)
+	stableRateExcessOffset := params["stableRateExcessOffset"].(*big.Int)
+
+	MAX_EXCESS_USAGE_RATIO := new(big.Int).Sub(utils.Ray, optimalRatio)
+	MAX_EXCESS_STABLE_TO_TOTAL_DEBT_RATIO := new(big.Int).Sub(utils.Ray, optimalStableToTotalDebtRatio)
+
+	newTotalVariableDebt := new(big.Int).Add(totalVariableDebt, liquidityTaken)
+	totalDebt := new(big.Int).Add(totalStableDebt, newTotalVariableDebt)
+
+	currentStableRate = new(big.Int).Set(baseStableBorrowRate)
+	currentVariableRate = new(big.Int).Set(baseVariableBorrowRate)
+
+	stableToTotalDebtRatio := big.NewInt(0)
+	borrowUsageRatio := big.NewInt(0)
+	supplyUsageRatio := big.NewInt(0)
+
+	if totalDebt.Cmp(big.NewInt(0)) != 0 {
+		stableToTotalDebtRatio = utils.RayDiv(totalStableDebt, totalDebt)
+		availableLiquidity := new(big.Int).Add(availableLiquidity, liquidityAdded)
+		availableLiquidity.Sub(availableLiquidity, liquidityTaken)
+
+		availableLiquidityPlusDebt := new(big.Int).Add(availableLiquidity, totalDebt)
+		borrowUsageRatio = utils.RayDiv(totalDebt, availableLiquidityPlusDebt)
+		supplyUsageRatio = utils.RayDiv(totalDebt, new(big.Int).Add(availableLiquidityPlusDebt, unbacked))
+	}
+
+	if borrowUsageRatio.Cmp(optimalRatio) == 1 {
+		excessBorrowUsageRatio := new(big.Int).Sub(borrowUsageRatio, optimalRatio)
+		excessBorrowUsageRatio = utils.RayDiv(excessBorrowUsageRatio, MAX_EXCESS_USAGE_RATIO)
+
+		currentStableRate.Add(currentStableRate, stableRateSlope1)
+		currentStableRate.Add(currentStableRate, utils.RayMul(stableRateSlope2, excessBorrowUsageRatio))
+
+		currentVariableRate.Add(currentVariableRate, variableRateSlope1)
+		currentVariableRate.Add(currentVariableRate, utils.RayMul(variableRateSlope2, excessBorrowUsageRatio))
+	} else {
+		stableRate := utils.RayMul(stableRateSlope1, borrowUsageRatio)
+		stableRate = utils.RayDiv(stableRate, optimalRatio)
+		currentStableRate.Add(currentStableRate, stableRate)
+
+		variableRate := utils.RayMul(variableRateSlope1, borrowUsageRatio)
+		variableRate = utils.RayDiv(variableRate, optimalRatio)
+		currentVariableRate.Add(currentVariableRate, variableRate)
+	}
+
+	if stableToTotalDebtRatio.Cmp(optimalStableToTotalDebtRatio) == 1 {
+		diff := new(big.Int).Sub(stableToTotalDebtRatio, optimalStableToTotalDebtRatio)
+
+		excessStableDebtRatio := utils.RayDiv(diff, MAX_EXCESS_STABLE_TO_TOTAL_DEBT_RATIO)
+
+		currentStableRate.Add(currentStableRate, utils.RayMul(stableRateExcessOffset, excessStableDebtRatio))
+	}
+
+	overallBorrowRate := getOverallBorrowRate(
+		totalStableDebt,
+		newTotalVariableDebt,
+		currentVariableRate,
+		averageStableRate)
+
+	currentLiquidityRate = utils.RayMul(overallBorrowRate, supplyUsageRatio)
+	currentLiquidityRate = utils.PercentMul(currentLiquidityRate,
+		new(big.Int).Sub(utils.PercentageFactor, reserveFactor))
+
+	return
+}
+
+func getOverallBorrowRate(
+	totalStableDebt *big.Int,
+	totalVariableDebt *big.Int,
+	variableRate *big.Int,
+	averageStableRate *big.Int,
+) *big.Int {
+	totalDebt := new(big.Int).Add(totalStableDebt, totalVariableDebt)
+	if totalDebt.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0)
+	}
+
+	weightedVariableRate := utils.RayMul(utils.WadToRay(totalVariableDebt), variableRate)
+
+	weightedStableRate := utils.RayMul(utils.WadToRay(totalStableDebt), averageStableRate)
+
+	overallBorrowRate := new(big.Int).Add(weightedVariableRate, weightedStableRate)
+	overallBorrowRate = utils.RayDiv(overallBorrowRate, utils.WadToRay(totalDebt))
+
+	return overallBorrowRate
+}
+
 func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
 	return nil, nil
 }
