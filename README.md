@@ -1,6 +1,8 @@
 # LevYieldX
 An API written in Go that finds cross-chain leveraged yield farming strategies based on your risk tolerance and portfolio.
 
+This project is an API that provides all the information necessary to identify the best cross-chain leveraged yield farming strategies and to execute them. Users can input the liquidity amount, preferred base collateral tokens, leverage usage, chains, and protocols. The API will present all possible strategies, and once the user has selected one, all the transactions required to execute it.
+
 ```
 Example: Bob has $10,000 USDT. The API found two profitable strategies.
 
