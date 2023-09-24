@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"levyieldx/cmd/protocols"
 	"levyieldx/cmd/protocols/schema"
+	"levyieldx/cmd/protocols/synapse"
 	"levyieldx/cmd/utils"
 	"math/big"
 

@@ -20,6 +20,14 @@ type MarketInfo struct {
 	Params     map[string]interface{} `json:"params"`     // For protocol specific parameters
 }
 
+type BridgeRequest struct {
+	Origin      string   `json:"origin"`
+	Destination string   `json:"destination"`
+	TokenIn     string   `json:"tokenIn"`
+	TokenOut    string   `json:"tokenOut"`
+	AmountIn    *big.Int `json:"amountIn"`
+}
+
 type StrategyStep struct {
 	Market   *MarketInfo `json:"market"`
 	IsSupply bool        `json:"isSupply"`

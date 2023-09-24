@@ -5,6 +5,7 @@ import (
 	"levyieldx/cmd/protocols/aavev3"
 	"levyieldx/cmd/protocols/compoundv3"
 	"levyieldx/cmd/protocols/schema"
+	"levyieldx/cmd/protocols/synapse"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type ChainConfig struct {
@@ -97,6 +99,18 @@ func loadAliases() error {
 
 	TokenAliases = parsedMapping
 	return nil
+}
+
+// Returns the ethclient
+func Connect(chain string) (*ethclient.Client, error) {
+	// Setup the client
+	rpcEndpoint := ChainConfigs[chain].RPCEndpoint
+	cl, err := ethclient.Dial(rpcEndpoint)
+	if err != nil {
+		log.Printf("Failed to connect to the %v client: %v", chain, err)
+		return nil, err
+	}
+	return cl, nil
 }
 
 // Converts the token symbol to its respective address for the specified chain.
