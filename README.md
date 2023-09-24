@@ -1,9 +1,32 @@
 # LevYieldX
 An API written in Go that finds cross-chain leveraged yield farming strategies based on your risk tolerance and portfolio.
 
-Used GETH Abigen tool to generate bindings.
+```
+Example: Bob has $10,000 USDT. The API found two profitable strategies.
+
+// Total APY = 5%, Gas Cost = $0.05
+1. Supply $10,000 USDT to AaveV3 on Arbitrum for 5% APY.
+
+// Total APY = 7.4%, Gas Cost = $15.00
+1. Supply $10,000 USDT to AaveV3 on Arbitrum for 5% APY.
+2. Borrow $8,000 WETH from AaveV3 on Arbitrum for 3% APY.
+3. Bridge WETH to Ethereum.
+4. Supply $8,000 WETH to CompoundV3 on Ethereum for 6% APY.
+```
+
+## API
+
+### GET /strats
+
+Returns all strategies sorted by APY in descending order.
+
+### POST /transactions
+
+Returns all transactions required to execute the listed strategies.
 
 ## Notes
+
+Used GETH Abigen tool to generate bindings.
 
 Modules -> Packages -> Files
 
