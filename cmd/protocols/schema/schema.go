@@ -10,9 +10,8 @@ type ProtocolChain struct {
 }
 
 type MarketInfo struct {
-	Chain      string                 `json:"chain"`
 	Protocol   string                 `json:"protocol"`
-	Market     string                 `json:"market"`
+	Chain      string                 `json:"chain"`
 	Token      string                 `json:"token"`
 	Decimals   *big.Int               `json:"decimals"`
 	LTV        *big.Int               `json:"ltv"`        // In basis points, 0 if cannot be collateral

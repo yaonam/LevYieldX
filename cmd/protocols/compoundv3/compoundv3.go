@@ -36,6 +36,12 @@ type CompoundV3Stats struct {
 
 const CompoundV3Name = "compoundv3"
 
+var gasLimit = map[string]uint64{
+	"ethereum": 200000,
+	"arbitrum": 1500000,
+	"base":     200000,
+}
+
 var compv3ConfigAddresses = map[string]string{
 	"ethereum": "0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3",
 	"arbitrum": "0xb21b06D71c75973babdE35b49fFDAc3F82Ad3775",
@@ -445,6 +451,55 @@ func (c *CompoundV3) CalcAPY(m *schema.MarketInfo, amount *big.Int, isSupply boo
 	return apy, actualAmount, nil
 }
 
+// Lends the token to the protocol
 func (c *CompoundV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
-	return nil, nil
+	m := step.Market
+	baseAsset := m.Params["baseAsset"].(string)
+
+	// Connect to comet
+	chainAsset := step.Market.Chain
+	if baseAsset != "" {
+		chainAsset += ":" + baseAsset
+	}
+	if err := c.connectComet(chainAsset); err != nil {
+		return nil, fmt.Errorf("failed to connect to comet: %v", err)
+	}
+
+	walletAddress := common.HexToAddress(wallet)
+	address, err := utils.ConvertSymbolToAddress(step.Market.Chain, step.Market.Token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert symbol to address: %v", err)
+	}
+	tokenAddress := common.HexToAddress(address)
+
+	cometABI, err := CometMetaData.GetAbi()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comet abi: %v", err)
+	}
+
+	var txs []*types.Transaction
+	var method string
+	if step.IsSupply {
+		// Handle approvals
+		approvalTx, err := transactions.GetApprovalTxIfNeeded(c.cl, step.Market.Chain, tokenAddress, walletAddress, c.cometAddress, step.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get approval tx: %v", err)
+		}
+		txs = append(txs, approvalTx)
+		method = "supply"
+	} else {
+		method = "withdraw"
+	}
+	txData, err := cometABI.Pack(method, tokenAddress, step.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack withdraw calldata: %v", err)
+	}
+	tx := types.NewTx(&types.DynamicFeeTx{
+		To:   &c.cometAddress,
+		Data: txData,
+		Gas:  gasLimit[step.Market.Chain],
+	})
+	txs = append(txs, tx)
+
+	return txs, nil
 }

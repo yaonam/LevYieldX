@@ -41,6 +41,12 @@ type ReserveData struct {
 
 const AaveV3Name = "aavev3"
 
+var gasLimit = map[string]uint64{
+	"ethereum": uint64(300000),
+	"arbitrum": uint64(500000),
+	"base":     uint64(300000),
+}
+
 var aavev3AddressesProviders = map[string]string{
 	"ethereum": "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e",
 	"arbitrum": "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb",
@@ -419,5 +425,53 @@ func getOverallBorrowRate(
 }
 
 func (a *AaveV3) GetTransactions(wallet string, step *schema.StrategyStep) ([]*types.Transaction, error) {
-	return nil, nil
+	walletAddress := common.HexToAddress(wallet)
+
+	var txs []*types.Transaction
+	var txErr error
+	address, err := utils.ConvertSymbolToAddress(step.Market.Chain, step.Market.Token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert symbol: %v", err)
+	}
+	tokenAddress := common.HexToAddress(address)
+
+	poolABI, err := AaveV3PoolMetaData.GetAbi()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pool abi: %v", err)
+	}
+
+	var data []byte
+	if step.IsSupply {
+		approvalTx, err := transactions.GetApprovalTxIfNeeded(a.cl, step.Market.Chain, tokenAddress, walletAddress, a.poolAddress, step.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get approval tx: %v", err)
+		}
+		txs = append(txs, approvalTx)
+
+		data, err = poolABI.Pack("supply", tokenAddress, step.Amount, walletAddress, uint16(0))
+		if err != nil {
+			return nil, fmt.Errorf("failed to pack deposit calldata: %v", err)
+		}
+	} else {
+		data, err = poolABI.Pack("borrow", tokenAddress, step.Amount, big.NewInt(2), uint16(0), walletAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to pack borrow calldata: %v", err)
+		}
+	}
+	gas := gasLimit[step.Market.Chain]
+	if !step.IsSupply {
+		gas *= 2
+	}
+	tx := types.NewTx(&types.DynamicFeeTx{
+		To:   &a.poolAddress,
+		Data: data,
+		Gas:  gas,
+	})
+	txs = append(txs, tx)
+
+	if txErr != nil {
+		return nil, fmt.Errorf("failed to send supply tx: %v", txErr)
+	}
+
+	return txs, nil
 }
