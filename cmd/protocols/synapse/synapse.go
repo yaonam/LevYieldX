@@ -3,14 +3,13 @@ package synapse
 import (
 	"context"
 	"fmt"
+	"levyieldx/cmd/protocols/schema"
+	"levyieldx/cmd/transactions"
+	"levyieldx/cmd/utils"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-
-	"levyieldx/cmd/protocols/schema"
-	"levyieldx/cmd/transactions"
-	"levyieldx/cmd/utils"
 )
 
 type Synapse struct{}

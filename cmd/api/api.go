@@ -41,9 +41,9 @@ func Start() {
 func test(w http.ResponseWriter, r *http.Request) {
 	ps := []string{"aavev3", "compoundv3"}
 	chains := []string{"arbitrum", "ethereum"}
-	baseTokens := []string{"ETH", "USDC", "USDT", "DAI"}
-	maxLevels := 3
-	initialAmountUSD := new(big.Int).SetInt64(1000)
+	baseTokens := []string{"ETH", "USDC", "USDT"}
+	maxLevels := 2
+	initialAmountUSD := new(big.Int).SetInt64(100000000000)
 	safetyFactor := new(big.Int).SetInt64(9000)
 
 	var pcs []*schema.ProtocolChain

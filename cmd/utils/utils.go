@@ -47,6 +47,10 @@ func init() {
 			log.Printf("Failed to load %v: %v", config.Name(), err)
 		}
 	}
+	log.Println("Loading token aliases...")
+	if err := loadAliases(); err != nil {
+		log.Printf("Failed to load aliases: %v", err)
+	}
 }
 
 // Loads the chain config including rpc endpoint and token mappings.

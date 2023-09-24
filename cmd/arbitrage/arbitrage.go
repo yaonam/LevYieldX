@@ -250,3 +250,14 @@ func CalcBridgedStrats(ps map[string]*protocols.YieldProtocol, strats [][]*schem
 
 	return result, nil
 }
+
+// Compares the two strategies' APYs.
+// Returns true if a is larger than b, false otherwise.
+func apyMore(a, b *schema.Strategy) bool {
+	return a.APY.Cmp(b.APY) == 1
+}
+
+// Sorts the strategies by APY in descending order.
+func SortStrategies(strats []*schema.Strategy) {
+	slices.SortFunc(strats, apyMore)
+}
