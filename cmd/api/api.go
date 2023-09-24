@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/render"
 	"github.com/rs/cors"
 
 	"levyieldx/cmd/arbitrage"
@@ -35,6 +37,7 @@ func Start() {
 
 	r.Get("/", test)
 	r.Get("/strats", getStrats)
+	r.Post("/transactions", getTransactions)
 
 	// TODO: Change for prod deployment
 	log.Println("Starting server on port 8080")
@@ -124,6 +127,56 @@ func getStrats(w http.ResponseWriter, r *http.Request) {
 	arbitrage.SortStrategies(strategies)
 
 	res, err := json.Marshal(strategies)
+	if err != nil {
+		log.Panicf("failed to marshal strategies: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(res)
+}
+
+func getTransactions(w http.ResponseWriter, r *http.Request) {
+	var request schema.TransactionsRequest
+	if err := render.Bind(r, &request); err != nil {
+		log.Panicf("failed to bind input: %v", err)
+	}
+
+	txs := make([][]*types.Transaction, len(request.Strategies))
+	yps := make(map[string]protocols.YieldProtocol)
+	bp, err := protocols.GetBridgeProtocol("synapse")
+	if err != nil {
+		log.Panicf("Failed to get protocol: %v", err)
+	}
+	for i, strat := range request.Strategies {
+		for _, step := range strat.Steps {
+			if step.Market.Protocol == "synapse" {
+				// Bridge protocol
+				newTxs, err := bp.GetTransactions(request.Wallet, step)
+				if err != nil {
+					log.Panicf("failed to get transactions: %v", err)
+				}
+				txs[i] = append(txs[i], newTxs...)
+			} else {
+				// Yield protocol
+				p, ok := yps[step.Market.Protocol]
+				if !ok {
+					var err error
+					p, err = protocols.GetYieldProtocol(step.Market.Protocol)
+					if err != nil {
+						log.Panicf("Failed to get protocol: %v", err)
+					}
+					yps[step.Market.Protocol] = p
+				}
+				p.Connect(step.Market.Chain)
+				newTxs, err := p.GetTransactions(request.Wallet, step)
+				if err != nil {
+					log.Panicf("failed to get transactions: %v", err)
+				}
+				txs[i] = append(txs[i], newTxs...)
+			}
+		}
+	}
+
+	res, err := json.Marshal(txs)
 	if err != nil {
 		log.Panicf("failed to marshal strategies: %v", err)
 	}
